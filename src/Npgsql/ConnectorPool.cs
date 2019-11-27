@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -238,58 +239,59 @@ namespace Npgsql
                     {
                         // We've managed to increase the open counter, open a physical connections.
                         connector = new NpgsqlConnector(conn) { ClearCounter = _clearCounter };
+
                         // Try to connect targeted server.
                         // If the connected server is not intended, close the connection and try to connect next server.
-
                         var serverList = ServerListManager.getServerInfo(connector.Settings);
-
-                        NpgsqlConnection primarysv = null;
-                        var onRunning = false;
+                        var isTarget = false;
+                        NpgsqlConnection? mastersv = null;
                         for (var i = 0; i < serverList.Length; i++)
                         {
+                            Settings.Host = serverList[i].Host;
+                            Settings.Port = serverList[i].Port;
+                            try
                             {
-                                Settings.Host = serverList[i].Host;
-                                Settings.Port = serverList[i].Port;
-                                try
+                                await connector.Open(timeout, async, cancellationToken);
+                                isTarget = ServerListManager.IsTargetServer(conn, serverList[i]);
+                                // If TargetServerType parameter is set to "preferSlave", continue this loop by finding slave server.
+                                if (isTarget)
                                 {
-                                    await connector.Open(timeout, async, cancellationToken);
-                                    onRunning = ServerListManager.IsTargetServer(conn, serverList[i], ref primarysv);
-
-                                    // If TargetServerType parameter is set to "preferSlave", continue this loop by finding slave server.
-                                    if (onRunning)
-                                    {
-                                        break;
-                                    }
+                                    break;
                                 }
-                                catch (SocketException e)
+                                if (Settings.TargetServerType.Equals("preferSlave")
+                                    && mastersv == null && serverList[i].HostStatus.Equals("Master"))
                                 {
-                                    if ((e.SocketErrorCode != SocketError.TimedOut ||
-                                        e.SocketErrorCode != SocketError.ConnectionRefused) && serverList.Length > 1)
-                                    {
-                                        // nothing to do because try to check other servers
-                                    }
-                                    else
-                                        throw;
+                                    mastersv = conn.CloneWith(conn.ConnectionString);
+                                    mastersv.Settings.Host = Settings.Host;
+                                    mastersv.Settings.Port = Settings.Port;
                                 }
-                                catch (PostgresException)
-                                {
-                                    throw;
-                                }
-                                // If connector is not closed, connection is remained.
-                                connector.Close();
-                                connector = new NpgsqlConnector(conn);
                             }
+                            catch (SocketException e)
+                            {
+                                if ((e.SocketErrorCode != SocketError.TimedOut || e.SocketErrorCode != SocketError.ConnectionRefused) && serverList.Length > 1)
+                                {
+                                    // nothing to do because try to check other servers
+                                }
+                                else
+                                    throw;
+                            }
+                            catch (PostgresException)
+                            {
+                                throw;
+                            }
+                            // If connector is not closed, connection is remained.
+                            connector.Close();
+                            connector = new NpgsqlConnector(conn);
                         }
 
-                        if (primarysv != null && onRunning == false)
+                        // This is the case for TargetServerType parameter is set to "preferSlave" but no slave server.
+                        if (mastersv != null && !isTarget)
                         {
-                            connector = new NpgsqlConnector(primarysv);
+                            connector = new NpgsqlConnector(mastersv);
                             await connector.Open(timeout, async, cancellationToken);
                         }
-                        else if (!onRunning)
+                        else if (!isTarget)
                             throw new NpgsqlException("Could not find a suitable target server.");
-
-
                     }
                     catch
                     {

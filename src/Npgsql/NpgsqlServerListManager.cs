@@ -167,8 +167,7 @@ namespace Npgsql
         /// </summary>
         /// <param name="connection">Connection</param>
         /// <param name="targetserver">Target Host and Port parameter</param>
-        /// <param name="primarysv"></param>
-        public static bool IsTargetServer(NpgsqlConnection connection, ServerPair targetserver, ref NpgsqlConnection primarysv)
+        public static bool IsTargetServer(NpgsqlConnection connection, ServerPair targetserver)
         {
             // check if the server is master or slave by sending "SHOW transaction_read_only"
             DbCommand sendMsg = connection.CreateCommand();
@@ -183,12 +182,6 @@ namespace Npgsql
                     connection.Settings.TargetServerType == TargetServerType.any)
                 {
                     return true;
-                }
-                else if (connection.Settings.TargetServerType == TargetServerType.preferSlave)
-                {
-                    primarysv = connection.CloneWith(connection.ConnectionString);
-                    primarysv.Settings.Host = connection.Settings.Host;
-                    primarysv.Settings.Port = connection.Settings.Port;
                 }
             }
             else if (isSlave.Equals("on"))
@@ -206,12 +199,12 @@ namespace Npgsql
 
             return false;
         }
-
     }
+
 
     internal enum NpgsqlServerListManager
     {
-        Unknow,
+        Unknown,
         Down,
         Master,
         Slave
@@ -219,14 +212,12 @@ namespace Npgsql
 
     internal class ServerPair
     {
-        private string displayedHost;
-        private int displayedPort;
         private volatile NpgsqlServerListManager status;
 
-        public ServerPair(string value1, int value2)
+        public ServerPair(string host, int port)
         {
-            DisplayedHost = value1;
-            DisplayedPort = value2;
+            DisplayedHost = host;
+            DisplayedPort = port;
         }
 
         public string Host
@@ -244,8 +235,8 @@ namespace Npgsql
             get { return status; }
         }
 
-        public string DisplayedHost { get => displayedHost; set => displayedHost = value; }
-        public int DisplayedPort { get => displayedPort; set => displayedPort = value; }
+        public string DisplayedHost { get; set; }
+        public int DisplayedPort { get; set; }
 
         public void UpdateHostStatus(NpgsqlServerListManager status)
         {

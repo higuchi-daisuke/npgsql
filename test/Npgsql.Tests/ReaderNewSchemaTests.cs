@@ -97,10 +97,13 @@ namespace Npgsql.Tests
                 using (var cmd = new NpgsqlCommand("SELECT foo,8 FROM data", conn))
                 using (var reader = cmd.ExecuteReader(CommandBehavior.SchemaOnly))
                 {
-                    if (host.IndexOf(":") > 0)
-                        host = host.Substring(0, host.IndexOf(":"));
-                    if (host.IndexOf(",") > 0)
-                        host = host.Substring(0, host.IndexOf(","));
+                    if (host != null)
+                    {
+                        if (host.IndexOf(":") > 0)
+                            host = host.Substring(0, host.IndexOf(":"));
+                        if (host.IndexOf(",") > 0)
+                            host = host.Substring(0, host.IndexOf(","));
+                    }
 
                     var columns = reader.GetColumnSchema();
                     Assert.That(columns[0].BaseServerName, Is.EqualTo(host));
