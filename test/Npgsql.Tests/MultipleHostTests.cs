@@ -120,10 +120,11 @@ namespace Npgsql.Tests
             };
             RemovePort(csb);
             CheckMultipleHosts(csb);
-            var cs = csb.ToString();
-            using (var conn = new NpgsqlConnection(cs))
+            using (var conn = OpenConnection(csb))
+            using (var cmd = new NpgsqlCommand("SHOW transaction_read_only", conn))
             {
-                Assert.That(() => conn.Open(), Throws.Exception.TypeOf<NpgsqlException>());
+                var isSlave = cmd.ExecuteScalar();
+                Assert.That(isSlave, Is.EqualTo("on"));
             }
         }
 
@@ -141,13 +142,17 @@ namespace Npgsql.Tests
             using (var cmd = new NpgsqlCommand("SHOW transaction_read_only", conn))
             {
                 var isSlave = cmd.ExecuteScalar();
-                Assert.That(isSlave, Is.EqualTo("off"));
+                Assert.That(isSlave, Is.EqualTo("on"));
             }
         }
 
         private void CheckMultipleHosts(NpgsqlConnectionStringBuilder sb)
         {
-            var isMultiple = sb.Host.Contains(",");
+            var isMultiple = false;
+            if (sb.Host != null)
+            {
+                isMultiple = sb.Host.Contains(",");
+            }
             if (!isMultiple)
                 Assert.Ignore("ConnectionString must have multiple hosts when this test is run. ");
         }
